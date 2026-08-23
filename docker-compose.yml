@@ -1,0 +1,11 @@
+services:
+  vera-bot:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8080
+      - TEAM_NAME=Vera Challenge Team
+      - MODEL=vera-rule-engine-v1
+    restart: unless-stopped

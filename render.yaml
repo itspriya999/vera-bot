@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: vera-bot
+    runtime: docker
+    plan: free
+    healthCheckPath: /v1/healthz
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: HOST
+        value: "0.0.0.0"
+      - key: TEAM_NAME
+        sync: false
+      - key: TEAM_MEMBERS
+        sync: false
+      - key: CONTACT_EMAIL
+        sync: false
+      - key: MODEL
+        value: vera-rule-engine-v1
+      - key: APPROACH
+        value: Context-grounded signal ranking with category-specific strategies
+      - key: VERSION
+        value: "1.0.0"
