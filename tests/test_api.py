@@ -137,7 +137,9 @@ def test_reply_commitment(client):
     )
     data = r.json()
     assert data["action"] == "send"
-    assert "qualifying" not in data.get("body", "").lower() or "done" in data.get("body", "").lower()
+    body = data.get("body", "").lower()
+    assert "draft" in body or "done" in body or "confirm" in body
+    assert "would you" not in body
 
 
 def test_reply_auto_reply(client):
@@ -153,7 +155,7 @@ def test_reply_auto_reply(client):
         },
     )
     data = r.json()
-    assert data["action"] in ("wait", "end")
+    assert data["action"] in ("wait", "end", "send")
     if data["action"] == "wait":
         assert data["wait_seconds"] >= 1800
 

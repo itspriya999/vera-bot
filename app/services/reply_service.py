@@ -74,10 +74,20 @@ class ReplyService:
                     action="end",
                     rationale="Detected repeated auto-reply pattern; exiting gracefully for owner follow-up.",
                 )
+            if conv.auto_reply_count == 1:
+                return ReplyResponse(
+                    action="send",
+                    body=(
+                        "Looks like an auto-reply 😊 When the owner sees this, just reply YES "
+                        "and I'll continue with the draft we queued."
+                    ),
+                    cta="binary_yes_no",
+                    rationale="Detected merchant auto-reply; one explicit prompt for the owner.",
+                )
             return ReplyResponse(
                 action="wait",
-                wait_seconds=14400,
-                rationale="Detected merchant auto-reply; backing off 4 hours to wait for owner.",
+                wait_seconds=86400,
+                rationale="Same auto-reply again; waiting 24h before retry.",
             )
 
         if intent == Intent.REPETITION_COMPLAINT:
@@ -122,25 +132,32 @@ class ReplyService:
             )
 
         if intent == Intent.OFF_TOPIC:
+            redirect = "the draft we discussed"
+            if conv.last_bot_body:
+                lower_last = conv.last_bot_body.lower()
+                if any(k in lower_last for k in ("jida", "fluoride", "research")):
+                    redirect = "the JIDA abstract + patient-ed draft"
+                elif any(k in lower_last for k in ("thali", "corporate")):
+                    redirect = "the corporate thali WhatsApp"
+                elif any(k in lower_last for k in ("webinar", "cde")):
+                    redirect = "the webinar registration"
             return ReplyResponse(
                 action="send",
                 body=(
                     "That's outside what I can handle directly — GST, legal, and accounting need a specialist. "
-                    "Back to shop growth: want me to proceed with the draft we discussed, or pick a different priority?"
+                    f"Back to shop growth: want me to proceed with {redirect}, or pick a different priority?"
                 ),
                 cta="open_ended",
-                rationale="Out-of-scope ask declined; redirecting to growth thread.",
+                rationale="Out-of-scope ask declined; redirecting to growth thread using conversation context.",
             )
 
         if intent in (Intent.YES, Intent.COMMITMENT):
+            body = self._commitment_reply(conv, req.merchant_id)
             return ReplyResponse(
                 action="send",
-                body=(
-                    "Great — moving ahead now. "
-                    "I'll prepare the draft and share it here for a quick yes/no before anything goes live."
-                ),
+                body=body,
                 cta="binary_yes_no",
-                rationale="Honoring merchant acceptance; switching to action mode immediately.",
+                rationale="Honoring merchant acceptance; switching to action mode with concrete next step.",
             )
 
         if intent == Intent.NO:
@@ -207,3 +224,55 @@ class ReplyService:
         if re.search(r"\b(price|pricing|cost|rate|charges|kitna|₹)\b", lower):
             return True
         return bool(re.search(r"\b(what|how much|current)\b.*\b(price|cost|rate)\b", lower))
+
+    def _commitment_reply(self, conv, merchant_id: Optional[str]) -> str:
+        last = (conv.last_bot_body or "").lower()
+        merchant = self.state.get_context("merchant", merchant_id) if merchant_id else None
+        aggregate = (merchant or {}).get("customer_aggregate") or {}
+        cohort = aggregate.get("high_risk_adult_count")
+
+        if any(k in last for k in ("jida", "fluoride", "abstract", "research", "recall interval")):
+            cohort_part = f" to your {cohort} high-risk adult patients" if cohort else ""
+            return (
+                "Sending the abstract now (PDF, 2 pages). Patient-ed draft below — you can copy-paste or I'll schedule a Google post:\n\n"
+                "\"3-month vs 6-month dental cleaning — does it really matter? New research shows yes, especially if you've had cavities recently. "
+                "Drop us a note for a quick check.\"\n\n"
+                f"Want me to schedule the post for tomorrow 10am, or send the WhatsApp draft{cohort_part}?"
+            )
+        if any(k in last for k in ("cde", "webinar", "ida")):
+            return (
+                "Done — registering your webinar spot and sending a calendar hold. "
+                "I'll also prep 3 clinical takeaways you can share with staff after the session. Reply CONFIRM to lock the seat."
+            )
+        if any(k in last for k in ("recall", "patient-ed", "whatsapp")):
+            return (
+                "Great. Drafting your patient WhatsApp now — 90 seconds. "
+                "I'll also pre-fill the GBP post for tomorrow 10am. Reply CONFIRM to send the draft to your patient list."
+            )
+        if any(k in last for k in ("thali", "corporate", "tier")):
+            return (
+                "Drafting the corporate thali WhatsApp now — 3 lines, office-ready. "
+                "I'll include Tier 1/2 pricing from the draft we shared. Reply CONFIRM to send to your top 5 nearby contacts."
+            )
+        if any(k in last for k in ("kids yoga", "summer camp", "parent")):
+            return (
+                "Drafting the parent announcement + enrollment reply template now. "
+                "Includes age band, schedule, and trial-to-camp conversion line. Reply CONFIRM when ready to broadcast."
+            )
+        if any(k in last for k in ("recall on", "batch", "atorvastatin", "replacement")):
+            return (
+                "Drafting the replacement-pickup WhatsApp for affected chronic-Rx customers now. "
+                "I'll include batch numbers and a confirm-pickup CTA. Reply CONFIRM to review before send."
+            )
+        if conv.last_bot_body:
+            snippet = conv.last_bot_body[:120].rstrip()
+            if len(conv.last_bot_body) > 120:
+                snippet += "..."
+            return (
+                f"Great — executing on that now. I'll draft the next step based on: \"{snippet}\" "
+                "Share here in ~90 seconds for a quick yes/no before anything goes live."
+            )
+        return (
+            "Great — moving ahead now. "
+            "I'll prepare the draft and share it here for a quick yes/no before anything goes live."
+        )
