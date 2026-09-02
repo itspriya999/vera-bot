@@ -29,7 +29,7 @@ def merchant_active_offer(
     merchant: dict[str, Any],
     prefer_keywords: Optional[list[str]] = None,
 ) -> Optional[str]:
-    """Return an active merchant offer only — never fall back to category catalog."""
+    """Return an active merchant offer only."""
     active = [
         str(o["title"])
         for o in merchant.get("offers") or []
@@ -47,10 +47,30 @@ def merchant_active_offer(
     return active[0]
 
 
+def _merchant_signals_text(merchant: dict[str, Any]) -> str:
+    return " ".join(merchant.get("signals") or []).lower()
+
+
 def first_active_offer_title(
     merchant: dict[str, Any],
     category: Optional[dict[str, Any]] = None,
     prefer_keywords: Optional[list[str]] = None,
 ) -> Optional[str]:
-    del category  # kept for call-site compatibility; category catalog must not be used
-    return merchant_active_offer(merchant, prefer_keywords)
+    """Merchant offers first; category catalog only when merchant has no block signal."""
+    offer = merchant_active_offer(merchant, prefer_keywords)
+    if offer:
+        return offer
+    if "no_active_offers" in _merchant_signals_text(merchant):
+        return None
+    catalog = (category or {}).get("offer_catalog") or []
+    if catalog:
+        if prefer_keywords:
+            for keyword in prefer_keywords:
+                kw = keyword.lower()
+                for item in catalog:
+                    title = str(item.get("title", ""))
+                    if title and kw in title.lower():
+                        return title
+        first = catalog[0].get("title")
+        return str(first) if first else None
+    return None

@@ -65,14 +65,21 @@ def test_ipl_saturday_contrarian():
 def test_seasonal_dip_member_count():
     result = _compose("trg_014_seasonal_acquisition_dip_powerhouse")
     assert "245" in result.body
-    assert "-30%" in result.body or "30%" in result.body
+    assert "2x" not in result.body.lower()
 
 
 def test_corporate_thali_uses_merchant_name():
     result = _compose("trg_013_corporate_thali_planning")
     assert "Mylari" in result.body
     assert "Indiranagar" in result.body
-    assert "₹125" in result.body
+    assert "₹149" in result.body
+    assert "₹125" not in result.body
+
+
+def test_bridal_no_fabricated_price():
+    result = _compose("trg_007_bridal_followup_kavya")
+    assert "₹2,499" not in result.body
+    assert "196 days" in result.body
 
 
 def test_competitor_mentions_their_offer():

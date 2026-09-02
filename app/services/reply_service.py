@@ -78,16 +78,15 @@ class ReplyService:
                 return ReplyResponse(
                     action="send",
                     body=(
-                        "Looks like an auto-reply 😊 When the owner sees this, just reply YES "
-                        "and I'll continue with the draft we queued."
+                        "Looks like an auto-reply — when the owner sees this, reply YES and I'll continue."
                     ),
                     cta="binary_yes_no",
                     rationale="Detected merchant auto-reply; one explicit prompt for the owner.",
                 )
             return ReplyResponse(
                 action="wait",
-                wait_seconds=86400,
-                rationale="Same auto-reply again; waiting 24h before retry.",
+                wait_seconds=14400,
+                rationale="Same auto-reply again; backing off 4 hours to wait for owner.",
             )
 
         if intent == Intent.REPETITION_COMPLAINT:
@@ -226,51 +225,35 @@ class ReplyService:
         return bool(re.search(r"\b(what|how much|current)\b.*\b(price|cost|rate)\b", lower))
 
     def _commitment_reply(self, conv, merchant_id: Optional[str]) -> str:
-        last = (conv.last_bot_body or "").lower()
+        last_lower = (conv.last_bot_body or "").lower()
         merchant = self.state.get_context("merchant", merchant_id) if merchant_id else None
-        aggregate = (merchant or {}).get("customer_aggregate") or {}
-        cohort = aggregate.get("high_risk_adult_count")
+        cohort = (merchant or {}).get("customer_aggregate", {}).get("high_risk_adult_count")
 
-        if any(k in last for k in ("jida", "fluoride", "abstract", "research", "recall interval")):
-            cohort_part = f" to your {cohort} high-risk adult patients" if cohort else ""
+        if any(k in last_lower for k in ("jida", "fluoride", "abstract", "research")):
+            extra = f" for your {cohort} high-risk adult patients" if cohort else ""
             return (
-                "Sending the abstract now (PDF, 2 pages). Patient-ed draft below — you can copy-paste or I'll schedule a Google post:\n\n"
-                "\"3-month vs 6-month dental cleaning — does it really matter? New research shows yes, especially if you've had cavities recently. "
-                "Drop us a note for a quick check.\"\n\n"
-                f"Want me to schedule the post for tomorrow 10am, or send the WhatsApp draft{cohort_part}?"
+                "Sending the abstract now. I'll draft the patient-ed WhatsApp next"
+                f"{extra} — reply YES when you want it sent."
             )
-        if any(k in last for k in ("cde", "webinar", "ida")):
+        if any(k in last_lower for k in ("cde", "webinar", "ida")):
             return (
-                "Done — registering your webinar spot and sending a calendar hold. "
-                "I'll also prep 3 clinical takeaways you can share with staff after the session. Reply CONFIRM to lock the seat."
+                "Registering your webinar spot and sending a calendar hold. "
+                "Reply YES to confirm the seat."
             )
-        if any(k in last for k in ("recall", "patient-ed", "whatsapp")):
+        if any(k in last_lower for k in ("thali", "corporate", "tier")):
             return (
-                "Great. Drafting your patient WhatsApp now — 90 seconds. "
-                "I'll also pre-fill the GBP post for tomorrow 10am. Reply CONFIRM to send the draft to your patient list."
+                "Drafting the corporate thali WhatsApp from the tiers we outlined. "
+                "Reply YES to review before send."
             )
-        if any(k in last for k in ("thali", "corporate", "tier")):
-            return (
-                "Drafting the corporate thali WhatsApp now — 3 lines, office-ready. "
-                "I'll include Tier 1/2 pricing from the draft we shared. Reply CONFIRM to send to your top 5 nearby contacts."
-            )
-        if any(k in last for k in ("kids yoga", "summer camp", "parent")):
+        if any(k in last_lower for k in ("kids yoga", "summer camp", "parent")):
             return (
                 "Drafting the parent announcement + enrollment reply template now. "
-                "Includes age band, schedule, and trial-to-camp conversion line. Reply CONFIRM when ready to broadcast."
+                "Reply YES when ready to broadcast."
             )
-        if any(k in last for k in ("recall on", "batch", "atorvastatin", "replacement")):
+        if any(k in last_lower for k in ("batch", "atorvastatin", "recall", "replacement")):
             return (
-                "Drafting the replacement-pickup WhatsApp for affected chronic-Rx customers now. "
-                "I'll include batch numbers and a confirm-pickup CTA. Reply CONFIRM to review before send."
-            )
-        if conv.last_bot_body:
-            snippet = conv.last_bot_body[:120].rstrip()
-            if len(conv.last_bot_body) > 120:
-                snippet += "..."
-            return (
-                f"Great — executing on that now. I'll draft the next step based on: \"{snippet}\" "
-                "Share here in ~90 seconds for a quick yes/no before anything goes live."
+                "Drafting the replacement-pickup WhatsApp using the batch details from your alert. "
+                "Reply YES to review before send."
             )
         return (
             "Great — moving ahead now. "

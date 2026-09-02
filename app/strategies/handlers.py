@@ -88,9 +88,11 @@ def _compose_recall_due(category, merchant, trigger, customer, trg_payload, trig
     slots = trg_payload.get("available_slots") or []
     offer = first_active_offer_title(merchant, category)
     if offer and "fluoride" not in offer.lower() and "cleaning" in offer.lower():
-        offer = f"{offer} + complimentary fluoride"
-    elif not offer:
-        offer = "₹299 cleaning + complimentary fluoride"
+        offer_text = f"{offer} + complimentary fluoride"
+    elif offer:
+        offer_text = offer
+    else:
+        offer_text = ""
     slot_text = ""
     if len(slots) >= 2:
         slot_text = (
@@ -106,12 +108,14 @@ def _compose_recall_due(category, merchant, trigger, customer, trg_payload, trig
     gap = recall_gap_text(last_visit, due_date, service_due)
     if hi:
         body = (
-            f"Hi {cust}, {clinic} here 🦷 It's been {gap}.{slot_text} {offer}."
+            f"Hi {cust}, {clinic} here 🦷 {gap.capitalize()}.{slot_text}"
+            f"{f' {offer_text}.' if offer_text else ''}"
             f" Reply 1 for Wed, 2 for Thu, or tell us a time that works."
         )
     else:
         body = (
-            f"Hi {cust}, {clinic} here — {gap}.{slot_text} {offer}."
+            f"Hi {cust}, {clinic} here — {gap.capitalize()}.{slot_text}"
+            f"{f' {offer_text}.' if offer_text else ''}"
             f" Reply 1 for the first slot, 2 for the second, or suggest a time."
         )
     return ComposeResult(
@@ -120,7 +124,7 @@ def _compose_recall_due(category, merchant, trigger, customer, trg_payload, trig
         send_as="merchant_on_behalf",
         suppression_key=_sk(trigger),
         rationale="Customer recall_due trigger with visit gap, real slots, and active merchant offer only.",
-        template_params=[cust, offer, slot_text.strip()],
+        template_params=[cust, offer_text or "recall", slot_text.strip()],
     )
 
 
@@ -241,15 +245,17 @@ def _compose_wedding_followup(category, merchant, trigger, customer, trg_payload
     biz = (merchant.get("identity") or {}).get("name", "the salon")
     locality = (merchant.get("identity") or {}).get("locality", "")
     offer = first_active_offer_title(merchant, category, prefer_keywords=["bridal", "wedding", "skin", "prep"])
-    if not offer or "haircut" in offer.lower():
-        offer = "₹2,499 skin-prep program (4 sessions + take-home kit)"
     days_part = f"{days} days to your wedding" if days else "your wedding window"
     loc_part = f" {locality}" if locality else ""
+    trial = trg_payload.get("trial_completed")
+    trial_part = f" (trial done {short_iso_date(trial)})" if trial else ""
     body = (
-        f"Hi {cust} 💍 {owner} from {biz}{loc_part} here. {days_part} — perfect window to start the 30-day skin-prep "
-        f"program before bridal bookings peak. {offer}. "
-        f"Want me to block your preferred Saturday slot for the first session next week?"
+        f"Hi {cust} 💍 {owner} from {biz}{loc_part} here. {days_part}{trial_part} — "
+        f"good window to start skin-prep before bridal bookings peak."
     )
+    if offer:
+        body += f" {offer}."
+    body += " Want me to block your preferred Saturday slot for the first session next week?"
     return ComposeResult(
         body=truncate(body),
         cta="open_ended",
@@ -344,12 +350,11 @@ def _compose_seasonal_dip(category, merchant, trigger, customer, trg_payload, tr
     members = trg_payload.get("active_members") or agg.get("total_active_members") or agg.get("active_members")
     window = trg_payload.get("season_window", "Apr-Jun")
     body = (
-        f"{name}, your views are {delta_text} this week — but this is the normal {window} acquisition lull "
-        f"(metro gyms typically see -25 to -35% in this window). "
-        f"Action: skip ad spend now, save it for Sept-Oct when conversion is 2x. "
+        f"{name}, your views are {delta_text} this week — normal {window} lull for metro gyms "
+        f"(-25 to -35% is typical). "
     )
     if members:
-        body += f"For now, focus retention on your {members} members. "
+        body += f"Focus retention on your {members} members. "
     body += 'Want me to draft a "summer attendance challenge" to keep them through the dip?'
     return ComposeResult(
         body=truncate(body),
@@ -397,34 +402,40 @@ def _compose_active_planning(category, merchant, trigger, customer, trg_payload,
     identity = merchant.get("identity") or {}
     locality = identity.get("locality", "")
     biz_name = identity.get("name", name)
+    offer = first_active_offer_title(merchant, category)
     loc_part = f" in {locality}" if locality else ""
+    merchant_ask = trg_payload.get("merchant_last_message", "")
 
     if "thali" in topic.lower() or "corporate" in topic.lower():
+        anchor = f" around your active {offer}" if offer else ""
         body = (
-            f"{name}, here's a starter version — you can edit:\n\n"
-            f"{biz_name} Corporate Thali — for offices{loc_part}\n"
-            f"- 10 thalis @ ₹125 each (₹25 off retail) + free delivery\n"
-            f"- 25 thalis @ ₹115 each + 2 free filter coffees\n"
-            f"- 50+: ₹105 each + 1 free dosa platter\n"
-            f"- WhatsApp the day-before by 5pm; deliver between 12:30-1pm\n\n"
+            f"{name}, starter corporate thali draft for {biz_name}{loc_part}{anchor}: "
+            f"Tier 1 (10 heads), Tier 2 (25 heads + bonus), Tier 3 (50+ bulk). "
+            f"Day-before WhatsApp order, fixed 12:30-1pm delivery window. "
             f"Want me to draft a 3-line WhatsApp for nearby office facilities managers?"
         )
+        if merchant_ask:
+            body = (
+                f"{name}, picking up your note — \"{merchant_ask[:80]}\". "
+                + body[len(f"{name}, ") :]
+            )
     elif "kids" in topic.lower() and "yoga" in topic.lower():
         body = (
-            f"{name}, kids yoga summer camp draft{loc_part}:\n"
-            f"- Ages 6-12, Mon/Wed/Fri 8-9am, 4-week block\n"
-            f"- ₹2,499/camp (₹699 drop-in trial already done)\n"
-            f"- Parent WhatsApp group + attendance tracker included\n\n"
+            f"{name}, kids yoga summer camp draft{loc_part}: "
+            f"ages 6-12, Mon/Wed/Fri mornings, 4-week block, parent WhatsApp group included. "
             f"Want me to draft the parent announcement + enrollment reply template?"
         )
+        if merchant_ask:
+            body = (
+                f"{name}, on your question — starter camp outline{loc_part}: "
+                f"ages 6-12, Mon/Wed/Fri mornings, 4-week block. "
+                f"Want me to draft the parent announcement + enrollment reply template?"
+            )
     else:
         body = (
-            f"{name}, here's a starter draft for {topic or 'your idea'}"
-            f"{loc_part} — edit anything:\n"
-            f"- Tier 1: 10 units @ discounted rate\n"
-            f"- Tier 2: 25 units @ better rate + bonus\n"
-            f"- Day-before WhatsApp order, fixed delivery window\n\n"
-            f"Want me to draft a 3-line WhatsApp to send to nearby offices?"
+            f"{name}, starter draft for {topic or 'your idea'}{loc_part}: "
+            f"Tier 1 (10 units), Tier 2 (25 units + bonus), day-before WhatsApp order. "
+            f"Want me to draft a 3-line WhatsApp to send nearby?"
         )
     return ComposeResult(
         body=truncate(body),
@@ -617,8 +628,7 @@ def _compose_category_seasonal(category, merchant, trigger, customer, trg_payloa
     trend_text = "; ".join(trend_lines) if trend_lines else "seasonal demand shifts"
     body = (
         f"{name}, {season} shelf watch — {trend_text}. "
-        f"Peers are restocking ORS + sunscreen ahead of the heat wave. "
-        f"Want me to draft a WhatsApp for chronic patients + a counter display checklist?"
+        f"Want me to draft a chronic-patient WhatsApp + a counter display checklist?"
     )
     return ComposeResult(
         body=truncate(body),
